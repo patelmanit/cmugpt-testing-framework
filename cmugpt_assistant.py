@@ -9,7 +9,7 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import datetime
 import os.path
-from datetime import datetime
+from datetime import datetime, timedelta
 from tzlocal import get_localzone  # Auto-detect user's timezone
 from zoneinfo import ZoneInfo
 
@@ -111,6 +111,24 @@ class CMUGPTAssistant:
                     },
                     "strict": False  # Enabling Structured Outputs
                 }
+            }, {
+                "type": "function",
+                "function": {
+                    "name": "delete_calendar_event",
+                    "description": "Delete an event based on the summary or name of the event",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "summary": {
+                                "type": "string",
+                                "description": "The name of the event to be deleted with default settings"
+                            }
+                        },
+                        "required": ["name"],
+                        "additionalProperties": False
+                    },
+                    "strict": False  # Enabling Structured Outputs
+                }
             }
         ]
         return tools
@@ -194,8 +212,7 @@ class CMUGPTAssistant:
                 return f"I apologize, but an unexpected error occurred. Please try again. (Error: {str(e)})"
 
         return "I apologize, but I was unable to process your request after multiple attempts. Please try again later."
-    def testers():
-        return True
+
     # Function to execute the functions
     def execute_function(self, function_name, arguments):
         if function_name == 'general_purpose_knowledge_search':
@@ -203,13 +220,15 @@ class CMUGPTAssistant:
         #Add elif statements here
         elif function_name == 'create_calendar_event':
             return self.create_calendar_event(arguments.get('summary'))
+        elif function_name == 'delete_calendar_event':
+            return self.delete_calendar_event(arguments.get('summary'))
         else:
             return {"error": "Function not found."}
 
     # Define the functions (simulate the functionality)
-    # def general_purpose_knowledge_search(self, search_query):
-    #     # Use Perplexity API for general knowledge searches
-    #     return 0
+    def general_purpose_knowledge_search(self, search_query):
+        # Use Perplexity API for general knowledge searches
+        return 0
         # return self.perplexity_search.search(search_query)
 
     # custom function for creating calendar
@@ -254,6 +273,49 @@ class CMUGPTAssistant:
         except HttpError as error:
             print(f"An error occurred: {error}")
         return "Your event was added successfully! Let me know if you need anything else"
+
+    def fetch_events(self, service):
+        event_list = []
+        today = datetime.utcnow()
+        start_of_week = today - timedelta(days=today.weekday())
+        end_of_week = start_of_week + timedelta(days=7)
+        timeMin = start_of_week.isoformat() + 'Z'
+        timeMax = end_of_week.isoformat() + 'Z'
+        print("Getting weekly events")
+        events_result = (
+            service.events()
+            .list(
+                calendarId="primary",
+                timeMin=timeMin,
+                timeMax=timeMax,
+                singleEvents=True,
+                orderBy="startTime"
+            )
+            .execute()
+        )
+        event_list = events_result.get("items", [])
+        if len(event_list) == 0:
+            print("No upcoming events found.")
+        return event_list
+
+    def get_event_id(self, name, event_list):
+        for event in event_list:
+            if event.get('summary') == name:
+                return event.get('id')
+        return None
+
+    # it only works for the event within a week to work
+    def delete_calendar_event(self, summary):
+        service = authenticate_google_calendar()
+        events = self.fetch_events(service)
+        event_id = self.get_event_id(summary, events)
+        try:
+            service = authenticate_google_calendar()
+            service.events().delete(calendarId="primary", eventId=event_id).execute()
+            print(f"Event {event_id} deleted successfully!")
+
+        except HttpError as error:
+            print(f"An error occurred: {error}")
     
     def get_functions_called(self):
         return self.functions_called
