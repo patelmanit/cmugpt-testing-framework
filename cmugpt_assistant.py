@@ -313,9 +313,11 @@ class CMUGPTAssistant:
             service = authenticate_google_calendar()
             service.events().delete(calendarId="primary", eventId=event_id).execute()
             print(f"Event {event_id} deleted successfully!")
+            return "Your event was deleted successfully! Let me know if you need anything else"
 
         except HttpError as error:
             print(f"An error occurred: {error}")
+        
     
     def get_functions_called(self):
         return self.functions_called
