@@ -104,6 +104,10 @@ class CMUGPTAssistant:
                             "summary": {
                                 "type": "string",
                                 "description": "The name of the event to be created with default settings"
+                            },
+                            "date" : {
+                                "type" : "string",
+                                "description": "The date of the event supplied by the user strictly in the format MM/DD/YYYY "
                             }
                         },
                         "required": ["name"],
@@ -202,23 +206,23 @@ class CMUGPTAssistant:
             return self.general_purpose_knowledge_search(arguments.get('search_query'))
         #Add elif statements here
         elif function_name == 'create_calendar_event':
-            return self.create_calendar_event(arguments.get('summary'))
+            return self.create_calendar_event(arguments.get('summary'),arguments.get("date"))
         else:
             return {"error": "Function not found."}
 
     # Define the functions (simulate the functionality)
-    # def general_purpose_knowledge_search(self, search_query):
-    #     # Use Perplexity API for general knowledge searches
-    #     return 0
+    def general_purpose_knowledge_search(self, search_query):
+        # Use Perplexity API for general knowledge searches
+        return 0
         # return self.perplexity_search.search(search_query)
 
     # custom function for creating calendar
-    def create_calendar_event(self, summary):
+    def create_calendar_event(self, summary, date):
         location = "Tepper"
         description = "Eating icecream"
 
-        start_date = "03/10/2025"
-        end_date = "03/10/2025"
+        start_date = date
+        end_date = date
         start_time = "09:30"
         end_time = "10:35"
 
