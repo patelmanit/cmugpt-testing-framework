@@ -12,7 +12,7 @@ import os.path
 from datetime import datetime, timedelta
 from tzlocal import get_localzone  # Auto-detect user's timezone
 from zoneinfo import ZoneInfo
-
+import difflib
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -115,11 +115,11 @@ class CMUGPTAssistant:
                             },
                             "start_date": {
                                 "type": "string",
-                                "description": f"Start date of the event to be created, in the form of 'MM/DD/YYYY' with default or baseline set to the date {datetime.now()}"
+                                "description": f"Start date of the event to be created, in the form of 'MM/DD/YYYY' with DEFAULT DATE AS {datetime.now()} if not specified by the user. When the user specifies a day of the week, use {datetime.now()} as reference for today's date. ALWAYS think twice and count to check that the date and the user's specified day match up"
                             },
                             "end_date": {
                                 "type": "string",
-                                "description": f"End date of the event to be created, in the form of 'MM/DD/YYYY' with default set to the date {datetime.now()}"
+                                "description": f"End date of the event to be created, in the form of 'MM/DD/YYYY' with DEFAULT DATE AS {datetime.now()} if not specified by the user. When the user specifies a day of the week, use {datetime.now()} as reference for today's date. ALWAYS think twice and count to check that the date and the user's specified day match up"
                             }
                         },
                         "required": ["name"],
@@ -131,7 +131,7 @@ class CMUGPTAssistant:
                 "type": "function",
                 "function": {
                     "name": "delete_calendar_event",
-                    "description": "Delete an event based on the summary or name of the event",
+                    "description": "Delete a calendar event that matches the given summary. First fetch events and then delete the one that matches.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -145,7 +145,26 @@ class CMUGPTAssistant:
                     },
                     "strict": False  # Enabling Structured Outputs
                 }
-            }
+            }, 
+            # {
+            #     "type": "function",
+            #     "function": {
+            #         "name": "fetch_events",
+            #         "description": "Fetch upcoming calendar events for the next N days. Use this function to see what events are available before deleting.",
+            #         "parameters": {
+            #             "type": "object",
+            #             "properties": {
+            #                 "delta": {
+            #                     "type": "string",
+            #                     "description": "100"
+            #                 }
+            #             },
+            #             "required": ["name"],
+            #             "additionalProperties": False
+            #         },
+            #         "strict": False  # Enabling Structured Outputs
+            #     }
+            # }
         ]
         return tools
 
@@ -293,14 +312,18 @@ class CMUGPTAssistant:
             print(f"An error occurred: {error}")
         return "Your event was added successfully! Let me know if you need anything else"
 
-    def fetch_events(self, service):
+    def fetch_events(self, delta, service = authenticate_google_calendar()):
+        if type(delta) == str:
+            diff = timedelta(days=int(delta))
+        else: 
+            diff = timedelta(days=delta)
         event_list = []
         today = datetime.utcnow()
-        start_of_week = today - timedelta(days=today.weekday())
-        end_of_week = start_of_week + timedelta(days=7)
+        start_of_week = today - diff
+        end_of_week = start_of_week + diff
         timeMin = start_of_week.isoformat() + 'Z'
         timeMax = end_of_week.isoformat() + 'Z'
-        print("Getting weekly events")
+        print("Getting all events")
         events_result = (
             service.events()
             .list(
@@ -324,20 +347,68 @@ class CMUGPTAssistant:
         return None
 
     # it only works for the event within a week to work
-    def delete_calendar_event(self, summary):
+    # def delete_calendar_event(self, summary):
+    #     service = authenticate_google_calendar()
+    #     events = self.fetch_events(100, service)
+    #     best_match = None
+    #     for event in events:
+    #         if summary.lower() in event.get('summary', '').lower():
+    #             best_match = event
+    #             break
+        
+    #     if best_match:
+    #         event_id = best_match.get('id')
+    #         try:
+    #             service.events().delete(calendarId="primary", eventId=event_id).execute()
+    #             return f"Event '{best_match.get('summary')}' was deleted successfully!"
+    #         except HttpError as error:
+    #             return f"An error occurred: {error}"
+    #     else:
+    #         return f"No event matching '{summary}' was found in your calendar."
+    def delete_calendar_event(self, summary):  # For string similarity calculation
+    
         service = authenticate_google_calendar()
-        events = self.fetch_events(service)
-        event_id = self.get_event_id(summary, events)
-        try:
-            service = authenticate_google_calendar()
-            service.events().delete(calendarId="primary", eventId=event_id).execute()
-            print(f"Event {event_id} deleted successfully!")
-            return "Your event was deleted successfully! Let me know if you need anything else"
-
-        except HttpError as error:
-            print(f"An error occurred: {error}")
-
-
+        events = self.fetch_events(100, service)
+        
+        if not events:
+            return "No events found in your calendar to delete."
+        
+        # Get all event summaries and calculate similarity scores
+        event_summaries = [event.get('summary', '') for event in events]
+        similarity_scores = [(event, difflib.SequenceMatcher(None, summary.lower(), 
+                            event.get('summary', '').lower()).ratio()) 
+                            for event in events]
+        
+        # Sort by similarity score in descending order
+        similarity_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        # Get the best match (highest similarity score)
+        best_match = similarity_scores[0]
+        best_match_event = best_match[0]
+        best_match_score = best_match[1]
+        
+        # Threshold for considering a match "good enough" (can be adjusted)
+        threshold = 0.6
+        
+        if best_match_score >= threshold:
+            event_id = best_match_event.get('id')
+            event_summary = best_match_event.get('summary')
+            
+            try:
+                service.events().delete(calendarId="primary", eventId=event_id).execute()
+                return f"Event '{event_summary}' was deleted successfully! (Match score: {best_match_score:.2f})"
+            except HttpError as error:
+                return f"An error occurred while trying to delete '{event_summary}': {error}"
+        else:
+            # Return top 3 possible matches if nothing is a great match
+            top_matches = [f"'{match[0].get('summary')}' (score: {match[1]:.2f})" 
+                        for match in similarity_scores[:3] if match[1] > 0.3]
+            
+            if top_matches:
+                matches_text = "\n- ".join(top_matches)
+                return f"No event closely matching '{summary}' was found. Did you mean one of these?\n- {matches_text}"
+            else:
+                return f"No event matching '{summary}' was found in your calendar."
 
         
     
