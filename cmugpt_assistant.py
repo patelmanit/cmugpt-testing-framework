@@ -104,6 +104,22 @@ class CMUGPTAssistant:
                             "summary": {
                                 "type": "string",
                                 "description": "The name of the event to be created with default settings"
+                            }, 
+                            "location": {
+                                "type": "string",
+                                "description": "The location of the event to be created with default settings"
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "A detailed description of the event to be created with default settings"
+                            },
+                            "start_date": {
+                                "type": "string",
+                                "description": f"Start date of the event to be created, in the form of 'MM/DD/YYYY' with default or baseline set to the date {datetime.now()}"
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": f"End date of the event to be created, in the form of 'MM/DD/YYYY' with default set to the date {datetime.now()}"
                             }
                         },
                         "required": ["name"],
@@ -219,7 +235,7 @@ class CMUGPTAssistant:
             return self.general_purpose_knowledge_search(arguments.get('search_query'))
         #Add elif statements here
         elif function_name == 'create_calendar_event':
-            return self.create_calendar_event(arguments.get('summary'))
+            return self.create_calendar_event(arguments.get('summary'), arguments.get('location'), arguments.get('description'), arguments.get('start_date'), arguments.get('end_date'))
         elif function_name == 'delete_calendar_event':
             return self.delete_calendar_event(arguments.get('summary'))
         else:
@@ -232,12 +248,14 @@ class CMUGPTAssistant:
         # return self.perplexity_search.search(search_query)
 
     # custom function for creating calendar
-    def create_calendar_event(self, summary):
-        location = "Tepper"
-        description = "Eating icecream"
+    def create_calendar_event(self, summary, location, description, start_date, end_date):
+        #location = "Tepper"
+        #description = "Eating icecream"
 
-        start_date = "03/10/2025"
-        end_date = "03/10/2025"
+        #start_date = "03/20/2025"
+        print(start_date)
+        #end_date = "03/20/2025"
+        print(end_date)
         start_time = "09:30"
         end_time = "10:35"
 
@@ -263,6 +281,7 @@ class CMUGPTAssistant:
             'dateTime': end_iso,
         },
         }
+
         service = authenticate_google_calendar()
 
         try:
@@ -317,6 +336,9 @@ class CMUGPTAssistant:
 
         except HttpError as error:
             print(f"An error occurred: {error}")
+
+
+
         
     
     def get_functions_called(self):
