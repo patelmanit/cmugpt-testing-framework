@@ -52,7 +52,7 @@ class CMUGPTAssistant:
             timeout=60.0,  # 60 second timeout
             max_retries=3  # Allow 3 retries
         )
-        
+        self.service = authenticate_google_calendar()
         # Define the function definitions (tools) for the model
         self.tools = self.get_tools()
         
@@ -97,7 +97,7 @@ class CMUGPTAssistant:
                 "type": "function",
                 "function": {
                     "name": "create_calendar_event",
-                    "description": "Make an event in the user's calendar when prompted",
+                    "description": "Create/Add an event in the user's calendar when prompted",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -120,6 +120,14 @@ class CMUGPTAssistant:
                             "end_date": {
                                 "type": "string",
                                 "description": f"End date of the event to be created, in the form of 'MM/DD/YYYY' with DEFAULT DATE AS {datetime.now()} if not specified by the user. When the user specifies a day of the week, use {datetime.now()} as reference for today's date. ALWAYS think twice and count to check that the date and the user's specified day match up"
+                            },
+                            "start_time": {
+                                "type": "string",
+                                "description": f"Start time during the day of the event to be created, in the form of 'HH:MM' with default set to the time 09:00"
+                            },
+                            "end_time": {
+                                "type": "string",
+                                "description": f"End time of the event to be created, in the form of 'HH:MM' with default set to one hour after start_time"
                             }
                         },
                         "required": ["name"],
@@ -145,26 +153,14 @@ class CMUGPTAssistant:
                     },
                     "strict": False  # Enabling Structured Outputs
                 }
-            }, 
-            # {
-            #     "type": "function",
-            #     "function": {
-            #         "name": "fetch_events",
-            #         "description": "Fetch upcoming calendar events for the next N days. Use this function to see what events are available before deleting.",
-            #         "parameters": {
-            #             "type": "object",
-            #             "properties": {
-            #                 "delta": {
-            #                     "type": "string",
-            #                     "description": "100"
-            #                 }
-            #             },
-            #             "required": ["name"],
-            #             "additionalProperties": False
-            #         },
-            #         "strict": False  # Enabling Structured Outputs
-            #     }
-            # }
+            }, {
+                "type": "function",
+                "function": {
+                    "name": "delete_all_event",
+                    "description": "Delete all events in the calendar",
+                    "strict": False  # Enabling Structured Outputs
+                }
+            }
         ]
         return tools
 
@@ -257,6 +253,8 @@ class CMUGPTAssistant:
             return self.create_calendar_event(arguments.get('summary'), arguments.get('location'), arguments.get('description'), arguments.get('start_date'), arguments.get('end_date'))
         elif function_name == 'delete_calendar_event':
             return self.delete_calendar_event(arguments.get('summary'))
+        elif function_name == 'delete_all_event':
+            return self.delete_all_event()
         else:
             return {"error": "Function not found."}
 
@@ -267,7 +265,7 @@ class CMUGPTAssistant:
         # return self.perplexity_search.search(search_query)
 
     # custom function for creating calendar
-    def create_calendar_event(self, summary, location, description, start_date, end_date):
+    def create_calendar_event(self, summary, location, description, start_date, end_date, start_time = "06:00", end_time = "07:00"):
         #location = "Tepper"
         #description = "Eating icecream"
 
@@ -275,8 +273,8 @@ class CMUGPTAssistant:
         print(start_date)
         #end_date = "03/20/2025"
         print(end_date)
-        start_time = "09:30"
-        end_time = "10:35"
+        print(start_time)
+        print(end_time)
 
         start_object = datetime.strptime(f"{start_date} {start_time}", "%m/%d/%Y %H:%M")
         end_object = datetime.strptime(f"{end_date} {end_time}", "%m/%d/%Y %H:%M")
@@ -301,7 +299,7 @@ class CMUGPTAssistant:
         },
         }
 
-        service = authenticate_google_calendar()
+        service = self.service
 
         try:
             # insert the event 
@@ -312,7 +310,8 @@ class CMUGPTAssistant:
             print(f"An error occurred: {error}")
         return "Your event was added successfully! Let me know if you need anything else"
 
-    def fetch_events(self, delta, service = authenticate_google_calendar()):
+    def fetch_events(self, delta):
+        service = self.service
         if type(delta) == str:
             diff = timedelta(days=int(delta))
         else: 
@@ -367,8 +366,8 @@ class CMUGPTAssistant:
     #         return f"No event matching '{summary}' was found in your calendar."
     def delete_calendar_event(self, summary):  # For string similarity calculation
     
-        service = authenticate_google_calendar()
-        events = self.fetch_events(100, service)
+        service = self.service
+        events = self.fetch_events(100)
         
         if not events:
             return "No events found in your calendar to delete."
@@ -410,7 +409,18 @@ class CMUGPTAssistant:
             else:
                 return f"No event matching '{summary}' was found in your calendar."
 
-        
+    def delete_all_event(self):
+        service = self.service
+        events = self.fetch_events(7)
+        for event in events:
+            event_id = event.get('id')
+            try:
+                service.events().delete(calendarId="primary", eventId=event_id).execute()
+                print(f"Event {event_id} deleted successfully!")
+
+            except HttpError as error:
+                print(f"An error occurred: {error}")
+        return "Your event was deleted successfully! Let me know if you need anything else"
     
     def get_functions_called(self):
         return self.functions_called
